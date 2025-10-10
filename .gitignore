@@ -1,40 +1,12 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
+# Ignore everything by default
+*
 
-# Virtual envs
-.venv/
-venv/
-env/
-ENV/
+# Keep only these paths
+!.gitignore
+!NewsBot/
+!NewsBot/**
 
-# Build / dist
-build/
-dist/
-*.egg-info/
-.eggs/
-*.egg
-
-# Caches / tooling
-.pytest_cache/
-.mypy_cache/
-.cache/
-.ruff_cache/
-.coverage
-coverage.xml
-htmlcov/
-
-# Editors / IDE
-.vscode/
-.idea/
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Project-specific
-.env
-.env.*
+# Ignore sensitive or generated files inside NewsBot
+NewsBot/.env
+NewsBot/.env.*
 NewsBot/seen.json
-Downloader/article.txt
