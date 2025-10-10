@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual envs
+.venv/
+venv/
+env/
+ENV/
+
+# Build / dist
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+
+# Caches / tooling
+.pytest_cache/
+.mypy_cache/
+.cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Editors / IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project-specific
+.env
+.env.*
+NewsBot/seen.json
+Downloader/article.txt
