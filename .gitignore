@@ -5,10 +5,9 @@
 !.gitignore
 !requirements.txt
 !news_push_bot.py
-!NewsBot/
-!NewsBot/**
+!test.py
 
-# Ignore sensitive or generated files inside NewsBot
-NewsBot/.env
-NewsBot/.env.*
-NewsBot/seen.json
+# Ignore sensitive or generated files at root
+.env
+.env.*
+seen.json

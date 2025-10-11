@@ -6,7 +6,7 @@ from telegram.error import TelegramError
 from dotenv import load_dotenv
 
 async def main():
-    load_dotenv(r"C:\projects\learn_python\NewsBot\.env")
+    load_dotenv()
     token = os.getenv("BOT_TOKEN")
     chat  = os.getenv("CHAT_ID")  # @name သို့ -100...
     print("BOT_TOKEN_LEN:", len(token) if token else None)

@@ -133,7 +133,7 @@ async def run_once() -> None:
     load_dotenv()
     if not os.getenv("BOT_TOKEN") or not os.getenv("CHAT_ID"):
         base = os.path.dirname(os.path.abspath(__file__))
-        fallback = os.path.join(base, "NewsBot", ".env")
+        fallback = os.path.join(base, ".env")
         if os.path.exists(fallback):
             load_dotenv(fallback)
     token = os.getenv("BOT_TOKEN")
