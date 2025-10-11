@@ -1,6 +1,7 @@
 # news_push_instantview.py
 # pip install requests beautifulsoup4 python-telegram-bot==20.* python-dotenv
 import os, json, re, asyncio
+import logging, warnings
 from dataclasses import dataclass
 from typing import List, Optional
 from urllib.parse import urljoin
@@ -16,6 +17,34 @@ HEADERS    = {"User-Agent": "Mozilla/5.0"}
 SEEN_PATH  = "seen.json"
 POLL_SEC   = 300
 LIVE_PAT   = re.compile(r"(တိုက်ရိုက်(?:ထုတ်လွှင့်မှု|ထုတ်လွင့်မှု)?|live\b)", re.I)
+
+
+# -------------------- Silence warnings/log noise --------------------
+def _silence_noise() -> None:
+    try:
+        # Lower log level for noisy libs
+        logging.basicConfig(level=logging.ERROR)
+        logging.getLogger().setLevel(logging.ERROR)
+        for name in ("telegram", "httpx", "urllib3", "asyncio", "bs4"):
+            logging.getLogger(name).setLevel(logging.ERROR)
+
+        # Suppress Python warnings from common sources
+        try:
+            from telegram.warnings import PTBUserWarning  # type: ignore
+            warnings.filterwarnings("ignore", category=PTBUserWarning)
+        except Exception:
+            pass
+        try:
+            from bs4 import MarkupResemblesLocatorWarning  # type: ignore
+            warnings.filterwarnings("ignore", category=MarkupResemblesLocatorWarning)
+        except Exception:
+            pass
+        warnings.filterwarnings("ignore", category=UserWarning, module="bs4")
+        # Fallback: ignore all remaining warnings
+        warnings.filterwarnings("ignore")
+    except Exception:
+        # Never fail just because of logging/warnings setup
+        pass
 
 @dataclass(frozen=True)
 class Item:
@@ -126,4 +155,5 @@ async def main_loop() -> None:
         await asyncio.sleep(POLL_SEC)
 
 if __name__ == "__main__":
+    _silence_noise()
     asyncio.run(main_loop())
