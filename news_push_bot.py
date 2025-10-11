@@ -60,7 +60,11 @@ def load_seen() -> set[str]:
         with open(SEEN_PATH, "r", encoding="utf-8") as f:
             return set(json.load(f))
     except Exception:
-        return set()
+        try:
+            with open(os.path.join("NewsBot", "seen.json"), "r", encoding="utf-8") as f:
+                return set(json.load(f))
+        except Exception:
+            return set()
 
 def save_seen(s: set[str]) -> None:
     with open(SEEN_PATH, "w", encoding="utf-8") as f:
@@ -127,6 +131,11 @@ async def push_instantview(bot: Bot, chat_id: str, it: Item) -> None:
 # -------------------- Main logic --------------------
 async def run_once() -> None:
     load_dotenv()
+    if not os.getenv("BOT_TOKEN") or not os.getenv("CHAT_ID"):
+        base = os.path.dirname(os.path.abspath(__file__))
+        fallback = os.path.join(base, "NewsBot", ".env")
+        if os.path.exists(fallback):
+            load_dotenv(fallback)
     token = os.getenv("BOT_TOKEN")
     chat  = os.getenv("CHAT_ID")
     if not token or not chat:

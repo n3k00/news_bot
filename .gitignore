@@ -3,6 +3,8 @@
 
 # Keep only these paths
 !.gitignore
+!requirements.txt
+!news_push_bot.py
 !NewsBot/
 !NewsBot/**
 
