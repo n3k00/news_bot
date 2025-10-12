@@ -1,0 +1,16 @@
+feeds:
+  # Myanmar Now (RSS)
+  - key: myanmarnow
+    type: rss
+    url: https://myanmar-now.org/mm/feed/
+    resolve_canonical: true
+    fulltext: true
+    # split_len: 3500  # optional: max chars per part
+    # chat_id: -1001234567890   # optional; default falls back to CHAT_ID from .env
+    # template: "<b>{title}</b>\n🗓 {date}\n\n{link}"  # optional; defaults to this
+    # parse_mode: HTML
+
+  # BBC Burmese (existing HTML scraper)
+  - key: bbc_burmese
+    type: bbc
+    url: https://www.bbc.com/burmese.lite

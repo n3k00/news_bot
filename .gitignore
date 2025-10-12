@@ -6,6 +6,7 @@
 !requirements.txt
 !news_push_bot.py
 !test.py
+!feeds.yaml
 
 # Ignore sensitive or generated files at root
 .env
