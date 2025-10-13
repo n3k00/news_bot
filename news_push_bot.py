@@ -63,7 +63,7 @@ class Item:
 @dataclass(frozen=True)
 class Feed:
     key: str
-    type: str  # "rss" | "bbc"
+    type: str  # "rss" | "bbc" | "dvb"
     url: str
     chat_id: Optional[str] = None
     template: Optional[str] = None
@@ -259,6 +259,41 @@ def extract_article_text(url: str) -> str:
     txt = re.sub(r"(\s*\n\s*)+", "\n\n", txt)
     return txt.strip()
 
+def _strip_html_to_text(html: str) -> str:
+    soup = BeautifulSoup(html or "", "html.parser")
+    _clean_soup(soup)
+    node = _extract_main_node(soup) or soup
+    parts: List[str] = []
+    for el in node.find_all(["p", "li"]):
+        if not isinstance(el, Tag):
+            continue
+        t = el.get_text(" ", strip=True)
+        if not t:
+            continue
+        if el.name == "li":
+            t = "• " + t
+        parts.append(t)
+    txt = "\n\n".join(parts).strip()
+    txt = re.sub(r"(\s*\n\s*)+", "\n\n", txt)
+    return txt
+
+def extract_dvb_text(url: str) -> str:
+    try:
+        # dvb article links look like https://burmese.dvb.no/archives/<id>
+        m = re.search(r"/archives/(\d+)", url)
+        post_id = m.group(1) if m else ""
+        if not post_id:
+            # Fallback to generic extraction
+            return extract_article_text(url)
+        api = f"https://burmese.dvb.no/wp-json/wp/v2/posts/{post_id}"
+        r = requests.get(api, headers=HEADERS, timeout=20)
+        r.raise_for_status()
+        data = r.json()
+        html = data.get("content", {}).get("rendered", "") if isinstance(data, dict) else ""
+        return _strip_html_to_text(html)
+    except Exception:
+        return extract_article_text(url)
+
 def chunk_text(s: str, limit: int) -> List[str]:
     if limit <= 0:
         return [s]
@@ -300,7 +335,11 @@ async def send_fulltext(bot: Bot, dest: str, it: Item, feed: Feed) -> None:
     link = it.link
     if feed.resolve and link:
         link = resolve_canonical(link)
-    body = extract_article_text(link)
+    # Prefer site-specific extraction for dvb
+    if getattr(feed, "type", "") == "dvb":
+        body = extract_dvb_text(link)
+    else:
+        body = extract_article_text(link)
     date_str = fmt_date(it.date_iso, it.date_text)
     header = f"<b>{escape(it.title)}</b>\n🗓 {date_str}\n\n{link}"
     if not body:
@@ -324,6 +363,37 @@ async def send_fulltext(bot: Bot, dest: str, it: Item, feed: Feed) -> None:
     # Send remaining chunks
     for i in range(start_idx, len(chunks)):
         await bot.send_message(chat_id=dest, text=escape(chunks[i]), parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+
+def fetch_dvb(base: str) -> List[Item]:
+    """Fetch latest posts from dvb.no (Burmese) via WP REST API.
+    base can be site root (https://burmese.dvb.no) or a wp-json posts endpoint.
+    """
+    try:
+        u = (base or "").strip() or "https://burmese.dvb.no"
+        if "/wp-json/" not in u:
+            if u.endswith("/"):
+                u = u[:-1]
+            u = f"{u}/wp-json/wp/v2/posts?per_page=20&_fields=id,link,title,date_gmt,date"
+        r = requests.get(u, headers=HEADERS, timeout=20)
+        r.raise_for_status()
+        arr = r.json()
+        out: List[Item] = []
+        if not isinstance(arr, list):
+            return out
+        for e in arr:
+            if not isinstance(e, dict):
+                continue
+            pid = e.get("id")
+            link = e.get("link") or ""
+            title_obj = e.get("title") or {}
+            title = title_obj.get("rendered", "") if isinstance(title_obj, dict) else str(title_obj or "")
+            date_iso = e.get("date_gmt") or e.get("date") or ""
+            if not title or not link:
+                continue
+            out.append(Item(id=str(pid or link), title=str(title), link=str(link), date_text=str(date_iso), date_iso=str(date_iso)))
+        return out
+    except Exception:
+        return []
 def resolve_canonical(url: str) -> str:
     try:
         r = requests.get(url, headers=HEADERS, timeout=20, allow_redirects=True)
@@ -420,6 +490,8 @@ async def run_once_multi() -> None:
             items: List[Item]
             if f.type == "rss":
                 items = fetch_rss(f.url)
+            elif f.type == "dvb":
+                items = fetch_dvb(f.url)
             else:
                 items = fetch_list()
             if not items:
@@ -432,7 +504,7 @@ async def run_once_multi() -> None:
             new_items_sorted = sorted(new_items, key=parse_dt_key)
             dest = f.chat_id or chat
             for it in new_items_sorted:
-                if f.fulltext and f.type == "rss":
+                if f.fulltext:
                     await send_fulltext(bot, dest, it, feed=f)
                 else:
                     use_it = it
