@@ -443,13 +443,17 @@ async def run_once_multi() -> None:
                 save_seen(seen_map)
 
 async def main_loop() -> None:
-    while True:
-        try:
-            await run_once_multi()
-        except Exception as e:
-            print("error:", e)
-        await asyncio.sleep(POLL_SEC)
+    try:
+        while True:
+            print("Running loop...", flush=True)
+            await asyncio.sleep(60)
+    except asyncio.CancelledError:
+        print("Task cancelled gracefully.", flush=True)
+    except KeyboardInterrupt:
+        print("Program interrupted by user.", flush=True)
 
 if __name__ == "__main__":
-    _silence_noise()
-    asyncio.run(main_loop())
+    try:
+        asyncio.run(main_loop())
+    except KeyboardInterrupt:
+        print("Exited cleanly.")
