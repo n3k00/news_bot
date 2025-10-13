@@ -1,4 +1,4 @@
-# news_push_instantview.py
+﻿# news_push_instantview.py
 # pip install requests beautifulsoup4 python-telegram-bot==20.* python-dotenv
 import os, json, re, asyncio
 import logging, warnings
@@ -381,22 +381,25 @@ async def run_once() -> None:
     token = os.getenv("BOT_TOKEN")
     chat  = os.getenv("CHAT_ID")
     if not token or not chat:
-        raise RuntimeError("BOT_TOKEN / CHAT_ID မရှိ")
+        raise RuntimeError("BOT_TOKEN / CHAT_ID ????")
 
     items = fetch_list()
-    if not items: return
+    if not items:
+        return
 
-    seen = load_seen()
-    new_items = [it for it in items if it.id not in seen]
-    if not new_items: return
+    seen_map = load_seen()
+    sent_ids = set(seen_map.get("bbc_burmese", []))
+    new_items = [it for it in items if it.id not in sent_ids]
+    if not new_items:
+        return
 
-    new_items_sorted = sorted(new_items, key=parse_dt_key)  # old → new
+    new_items_sorted = sorted(new_items, key=parse_dt_key)
     async with Bot(token=token) as bot:
         for it in new_items_sorted:
             await push_instantview(bot, chat, it)
-            seen.add(it.id)
-            save_seen(seen)
-
+            sent_ids.add(it.id)
+    seen_map["bbc_burmese"] = sorted(sent_ids)
+    save_seen(seen_map)
 async def run_once_multi() -> None:
     load_dotenv()
     if not os.getenv("BOT_TOKEN") or not os.getenv("CHAT_ID"):
@@ -443,14 +446,9 @@ async def run_once_multi() -> None:
                 save_seen(seen_map)
 
 async def main_loop() -> None:
-    try:
-        while True:
-            print("Running loop...", flush=True)
-            await asyncio.sleep(60)
-    except asyncio.CancelledError:
-        print("Task cancelled gracefully.", flush=True)
-    except KeyboardInterrupt:
-        print("Program interrupted by user.", flush=True)
+    while True:
+        await run_once_multi()
+        await asyncio.sleep(60)
 
 if __name__ == "__main__":
     try:
