@@ -5,6 +5,8 @@
 !.gitignore
 !requirements.txt
 !news_push_bot.py
+!news_push_instantview.py
+!news_core.py
 !test.py
 !feeds.yaml
 !seen.json
@@ -12,4 +14,3 @@
 # Ignore sensitive or generated files at root
 .env
 .env.*
-
