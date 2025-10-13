@@ -7,8 +7,9 @@
 !news_push_bot.py
 !test.py
 !feeds.yaml
+!seen.json
 
 # Ignore sensitive or generated files at root
 .env
 .env.*
-seen.json
+

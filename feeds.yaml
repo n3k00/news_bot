@@ -21,3 +21,11 @@ feeds:
     url: https://burmese.dvb.no
     fulltext: true
     # split_len: 3500  # optional: max chars per message part
+
+  # News Eleven Business (scrape category page, full text + chunking)
+  - key: eleven_business
+    type: eleven
+    url: https://news-eleven.com/business
+    fulltext: true
+    # split_len: 3500
+    # resolve_canonical: true
