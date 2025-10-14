@@ -56,7 +56,7 @@ def headers_for(url: str | None) -> Dict[str, str]:
     return h
 BASE_DIR = Path(__file__).resolve().parent
 SEEN_PATH = BASE_DIR / "seen.json"
-POLL_SEC = 60
+POLL_SEC = 3600  # check every 1 hour
 LIVE_PAT = re.compile(r"\blive\b", re.I)
 
 logger = logging.getLogger(__name__)
