@@ -51,17 +51,8 @@ def headers_for(url: str | None) -> Dict[str, str]:
     if "news-eleven.com" in host:
         h.update(ELEVEN_HEADERS)
     elif "dvb.no" in host:
-        # DVB specific headers
-        h.update({
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
-            ),
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Referer": "https://burmese.dvb.no/",
-            "Connection": "keep-alive",
-        })
+        # Friendly referer for dvb
+        h["Referer"] = "https://burmese.dvb.no/"
     return h
 BASE_DIR = Path(__file__).resolve().parent
 SEEN_PATH = BASE_DIR / "seen.json"
@@ -439,7 +430,7 @@ def chunk_text(s: str, limit: int) -> List[str]:
 
 def resolve_canonical(url: str) -> str:
     try:
-        r = requests.get(url, headers=headers_for(url), timeout=20, allow_redirects=True)
+        r = requests.get(url, headers=HEADERS, timeout=20, allow_redirects=True)
         r.raise_for_status()
         final = r.url or url
         soup = BeautifulSoup(r.text, "html.parser")
