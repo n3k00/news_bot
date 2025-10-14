@@ -21,7 +21,48 @@ from telegram.constants import ParseMode
 
 
 LIST_URL = "https://www.bbc.com/burmese.lite"
-HEADERS = {"User-Agent": "Mozilla/5.0"}
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
+ELEVEN_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://news-eleven.com/",
+    "Connection": "keep-alive",
+}
+
+def headers_for(url: str | None) -> Dict[str, str]:
+    h = dict(HEADERS)
+    try:
+        from urllib.parse import urlparse
+        host = urlparse(url or "").netloc.lower()
+    except Exception:
+        host = ""
+    if "news-eleven.com" in host:
+        h.update(ELEVEN_HEADERS)
+    elif "dvb.no" in host:
+        # DVB specific headers
+        h.update({
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://burmese.dvb.no/",
+            "Connection": "keep-alive",
+        })
+    return h
 BASE_DIR = Path(__file__).resolve().parent
 SEEN_PATH = BASE_DIR / "seen.json"
 POLL_SEC = 60
@@ -96,7 +137,7 @@ def save_seen(mapper: Dict[str, List[str]]) -> None:
 
 def fetch_list() -> List[Item]:
     try:
-        r = requests.get(LIST_URL, headers=HEADERS, timeout=20)
+        r = requests.get(LIST_URL, headers=headers_for(LIST_URL), timeout=20)
         r.raise_for_status()
     except requests.RequestException as e:
         logger.warning("fetch_list error: %s", e)
@@ -131,7 +172,7 @@ def fetch_list() -> List[Item]:
 
 def fetch_rss(feed_url: str) -> List[Item]:
     try:
-        r = requests.get(feed_url, headers=HEADERS, timeout=20)
+        r = requests.get(feed_url, headers=headers_for(feed_url), timeout=20)
         r.raise_for_status()
         parsed = feedparser.parse(r.content)
     except Exception as e:
@@ -158,7 +199,7 @@ def fetch_eleven(base: str) -> List[Item]:
         u = (base or "").strip()
         if not u:
             return []
-        r = requests.get(u, headers=HEADERS, timeout=20)
+        r = requests.get(u, headers=headers_for(u), timeout=20)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
         selectors = [
@@ -316,7 +357,7 @@ def _strip_html_to_text(html: str) -> str:
 
 def extract_article_text(url: str) -> str:
     try:
-        r = requests.get(url, headers=HEADERS, timeout=20)
+        r = requests.get(url, headers=headers_for(url), timeout=20)
         r.raise_for_status()
     except Exception as e:
         logger.warning("extract_article_text error: %s", e)
@@ -353,7 +394,7 @@ def extract_dvb_text(url: str) -> str:
         if not post_id:
             return extract_article_text(url)
         api = f"https://burmese.dvb.no/wp-json/wp/v2/posts/{post_id}"
-        r = requests.get(api, headers=HEADERS, timeout=20)
+        r = requests.get(api, headers=headers_for(api), timeout=20)
         r.raise_for_status()
         data = r.json()
         html = data.get("content", {}).get("rendered", "") if isinstance(data, dict) else ""
@@ -398,7 +439,7 @@ def chunk_text(s: str, limit: int) -> List[str]:
 
 def resolve_canonical(url: str) -> str:
     try:
-        r = requests.get(url, headers=HEADERS, timeout=20, allow_redirects=True)
+        r = requests.get(url, headers=headers_for(url), timeout=20, allow_redirects=True)
         r.raise_for_status()
         final = r.url or url
         soup = BeautifulSoup(r.text, "html.parser")
@@ -472,7 +513,7 @@ def fetch_dvb(base: str) -> List[Item]:
         u = (base or "").strip()
         if "/wp-json/" not in u:
             u = "https://burmese.dvb.no/wp-json/wp/v2/posts?per_page=10&_fields=id,link,date,title,content"
-        r = requests.get(u, headers=HEADERS, timeout=20)
+        r = requests.get(u, headers=headers_for(u), timeout=20)
         r.raise_for_status()
         arr = r.json()
         out: List[Item] = []
