@@ -6,7 +6,8 @@ import logging
 import re
 import warnings
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from email.utils import parsedate_to_datetime
 from html import escape
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -197,9 +198,24 @@ def load_config(default_chat: Optional[str]) -> List[Feed]:
 
 
 def fmt_date(dt_iso: str, fallback_text: str) -> str:
-    if dt_iso:
-        return dt_iso
-    return fallback_text or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    raw = (dt_iso or fallback_text or "").strip()
+    if not raw:
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    dt = parse_iso(raw)
+    if dt is None:
+        try:
+            d = parsedate_to_datetime(raw)
+            if d is not None:
+                if d.tzinfo is not None:
+                    d = d.astimezone(timezone.utc).replace(tzinfo=None)
+                dt = d
+        except Exception:
+            dt = None
+    if dt:
+        # Convert UTC naive -> UTC+06:30 (Myanmar Time)
+        mmt = dt + timedelta(hours=6, minutes=30)
+        return mmt.strftime("%d %b %Y %H:%M UTC+06:30")
+    return raw
 
 
 def parse_iso(dt_iso: str) -> Optional[datetime]:
