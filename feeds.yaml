@@ -15,17 +15,6 @@ feeds:
     type: bbc
     url: https://www.bbc.com/burmese.lite
 
-  # DVB Burmese (no RSS; uses WP API, send full text, split if long)
-  - key: dvb_burmese
-    type: rss
-    url: https://rss.app/feeds/HGmvfLDBNJEPnXlR.xml
-    fulltext: true
-    # split_len: 3500  # optional: max chars per message part
+  
 
-  # News Eleven Business (scrape category page, full text + chunking)
-  - key: eleven_business
-    type: eleven
-    url: https://news-eleven.com/business
-    fulltext: true
-    # split_len: 3500
-    # resolve_canonical: true
+  # Eleven feed removed (Eleven-specific code deprecated)

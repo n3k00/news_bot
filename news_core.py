@@ -30,29 +30,8 @@ HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
-ELEVEN_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Referer": "https://news-eleven.com/",
-    "Connection": "keep-alive",
-}
-
 def headers_for(url: str | None) -> Dict[str, str]:
     h = dict(HEADERS)
-    try:
-        from urllib.parse import urlparse
-        host = urlparse(url or "").netloc.lower()
-    except Exception:
-        host = ""
-    if "news-eleven.com" in host:
-        h.update(ELEVEN_HEADERS)
-    elif "dvb.no" in host:
-        # Friendly referer for dvb
-        h["Referer"] = "https://burmese.dvb.no/"
     return h
 BASE_DIR = Path(__file__).resolve().parent
 SEEN_PATH = BASE_DIR / "seen.json"
@@ -95,7 +74,7 @@ class Item:
 @dataclass(frozen=True)
 class Feed:
     key: str
-    type: str  # "rss" | "bbc" | "dvb" | "eleven"
+    type: str  # "rss" | "bbc"
     url: str
     chat_id: Optional[str] = None
     template: Optional[str] = None
@@ -182,52 +161,7 @@ def fetch_rss(feed_url: str) -> List[Item]:
     return out
 
 
-def fetch_eleven(base: str) -> List[Item]:
-    """Scrape News Eleven category/listing pages for article links.
-    Example: https://news-eleven.com/business
-    """
-    try:
-        u = (base or "").strip()
-        if not u:
-            return []
-        r = requests.get(u, headers=headers_for(u), timeout=20)
-        r.raise_for_status()
-        soup = BeautifulSoup(r.text, "html.parser")
-        selectors = [
-            "a[href^='/article/']",
-            "a[href^='https://news-eleven.com/article/']",
-            "article h2 a[href]",
-            "article h3 a[href]",
-            "div.views-row h2 a[href]",
-            "div.views-row h3 a[href]",
-        ]
-        seen: set[str] = set()
-        out: List[Item] = []
-        for sel in selectors:
-            for a in soup.select(sel):
-                if not isinstance(a, Tag):
-                    continue
-                href = a.get("href")
-                if not isinstance(href, str) or not href.strip():
-                    continue
-                link = urljoin(u, href)
-                if link in seen:
-                    continue
-                title = a.get_text(" ", strip=True) or a.get("title") or ""
-                if not title:
-                    img = a.find("img")
-                    if isinstance(img, Tag):
-                        alt = img.get("alt")
-                        if isinstance(alt, str) and alt.strip():
-                            title = alt.strip()
-                if not title:
-                    continue
-                seen.add(link)
-                out.append(Item(id=link, title=title, link=link, date_text="", date_iso=""))
-        return out
-    except Exception as e:
-        logger.warning("fetch_eleven error: %s", e)
-        return []
+    
 
 
 def load_config(default_chat: Optional[str]) -> List[Feed]:
@@ -323,27 +257,7 @@ def _extract_main_node(soup: BeautifulSoup) -> Tag | None:
     return candidates[0][1]
 
 
-def _strip_html_to_text(html: str) -> str:
-    soup = BeautifulSoup(html or "", "html.parser")
-    _clean_soup(soup)
-    node = _extract_main_node(soup) or soup
-    parts: List[str] = []
-    for el in node.find_all(["p", "li"]):
-        if not isinstance(el, Tag):
-            continue
-        t = el.get_text(" ", strip=True)
-        if not t:
-            continue
-        if el.name == "li":
-            t = "• " + t
-        parts.append(t)
-    txt = "\n\n".join(parts).strip()
-    try:
-        txt = txt.replace("\x07 ", "\u2022 ")
-    except Exception:
-        pass
-    txt = re.sub(r"(\s*\n\s*)+", "\n\n", txt)
-    return txt
+    
 
 
 def extract_article_text(url: str) -> str:
@@ -378,21 +292,7 @@ def extract_article_text(url: str) -> str:
     return txt.strip()
 
 
-def extract_dvb_text(url: str) -> str:
-    try:
-        m = re.search(r"/archives/(\d+)", url)
-        post_id = m.group(1) if m else ""
-        if not post_id:
-            return extract_article_text(url)
-        api = f"https://burmese.dvb.no/wp-json/wp/v2/posts/{post_id}"
-        r = requests.get(api, headers=headers_for(api), timeout=20)
-        r.raise_for_status()
-        data = r.json()
-        html = data.get("content", {}).get("rendered", "") if isinstance(data, dict) else ""
-        return _strip_html_to_text(html)
-    except Exception as e:
-        logger.warning("extract_dvb_text error: %s", e)
-        return extract_article_text(url)
+    
 
 
 def chunk_text(s: str, limit: int) -> List[str]:
@@ -470,10 +370,7 @@ async def send_fulltext(bot: Bot, dest: str, it: Item, feed: Feed) -> None:
         except Exception as e:
             logger.warning("resolve_canonical failed: %s", e)
     try:
-        if getattr(feed, "type", "") == "dvb":
-            body = await asyncio.to_thread(extract_dvb_text, link)
-        else:
-            body = await asyncio.to_thread(extract_article_text, link)
+        body = await asyncio.to_thread(extract_article_text, link)
     except Exception as e:
         logger.warning("article extraction failed: %s", e)
         body = ""
@@ -499,31 +396,7 @@ async def send_fulltext(bot: Bot, dest: str, it: Item, feed: Feed) -> None:
         await bot.send_message(chat_id=dest, text=escape(chunks[i]), parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
 
-def fetch_dvb(base: str) -> List[Item]:
-    try:
-        u = (base or "").strip()
-        if "/wp-json/" not in u:
-            u = "https://burmese.dvb.no/wp-json/wp/v2/posts?per_page=10&_fields=id,link,date,title,content"
-        r = requests.get(u, headers=headers_for(u), timeout=20)
-        r.raise_for_status()
-        arr = r.json()
-        out: List[Item] = []
-        if not isinstance(arr, list):
-            return out
-        for e in arr:
-            if not isinstance(e, dict):
-                continue
-            link = str(e.get("link") or "")
-            title_obj = e.get("title") or {}
-            title = title_obj.get("rendered", "") if isinstance(title_obj, dict) else str(title_obj or "")
-            date = str(e.get("date") or "")
-            if not title or not link:
-                continue
-            out.append(Item(id=link, title=str(title), link=link, date_text=date, date_iso=date))
-        return out
-    except Exception as e:
-        logger.warning("fetch_dvb error: %s", e)
-        return []
+    
 
 
 async def run_once_multi(token: str, chat: str) -> None:
@@ -535,13 +408,6 @@ async def run_once_multi(token: str, chat: str) -> None:
             try:
                 if f.type == "rss":
                     items = await asyncio.to_thread(fetch_rss, f.url)
-                elif f.type == "dvb":
-                    items = await asyncio.to_thread(fetch_dvb, f.url)
-                elif f.type == "eleven":
-                    items = await asyncio.to_thread(fetch_eleven, f.url)
-                    # Only consider latest 5 items for Eleven
-                    if items:
-                        items = items[:5]
                 elif f.type == "bbc":
                     items = await asyncio.to_thread(fetch_list)
                 else:
