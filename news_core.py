@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # Shared news bot core logic
 import asyncio
+import time
+import os
 import json
 import logging
 import re
@@ -19,6 +21,8 @@ import yaml
 from bs4 import BeautifulSoup, Tag
 from telegram import Bot
 from telegram.constants import ParseMode
+from telegram.request import HTTPXRequest
+from telegram.error import RetryAfter, TimedOut, NetworkError, BadRequest, Forbidden, Conflict
 
 
 LIST_URL = "https://www.bbc.com/burmese.lite"
@@ -106,12 +110,30 @@ def save_seen(mapper: Dict[str, List[str]]) -> None:
         logger.warning("failed to save seen.json: %s", e)
 
 
-def fetch_list() -> List[Item]:
+def safe_get(url: str, *, headers: Optional[Dict[str, str]] = None, timeout: int = 20, allow_redirects: bool | None = None):
+    """Perform HTTP GET with basic error handling.
+
+    On failure, logs and sleeps 35 seconds before returning None.
+    """
     try:
-        r = requests.get(LIST_URL, headers=headers_for(LIST_URL), timeout=20)
+        kwargs: Dict[str, Any] = {"headers": headers or headers_for(url), "timeout": timeout}
+        if allow_redirects is not None:
+            kwargs["allow_redirects"] = allow_redirects
+        r = requests.get(url, **kwargs)
         r.raise_for_status()
-    except requests.RequestException as e:
-        logger.warning("fetch_list error: %s", e)
+        return r
+    except Exception as e:
+        logger.warning("Request failed for %s: %s", url, e)
+        try:
+            time.sleep(35)
+        except Exception:
+            pass
+        return None
+
+
+def fetch_list() -> List[Item]:
+    r = safe_get(LIST_URL, headers=headers_for(LIST_URL), timeout=20)
+    if r is None:
         return []
     soup = BeautifulSoup(r.text, "html.parser")
     ul = soup.select_one("ul.bbc-14jdpb9") or soup.find("ul", class_="bbc-14jdpb9")
@@ -142,12 +164,13 @@ def fetch_list() -> List[Item]:
 
 
 def fetch_rss(feed_url: str) -> List[Item]:
+    r = safe_get(feed_url, headers=headers_for(feed_url), timeout=20)
+    if r is None:
+        return []
     try:
-        r = requests.get(feed_url, headers=headers_for(feed_url), timeout=20)
-        r.raise_for_status()
         parsed = feedparser.parse(r.content)
     except Exception as e:
-        logger.warning("fetch_rss error: %s", e)
+        logger.warning("fetch_rss parse error: %s", e)
         return []
     out: List[Item] = []
     for e in getattr(parsed, "entries", []) or []:
@@ -277,11 +300,8 @@ def _extract_main_node(soup: BeautifulSoup) -> Tag | None:
 
 
 def extract_article_text(url: str) -> str:
-    try:
-        r = requests.get(url, headers=headers_for(url), timeout=20)
-        r.raise_for_status()
-    except Exception as e:
-        logger.warning("extract_article_text error: %s", e)
+    r = safe_get(url, headers=headers_for(url), timeout=20)
+    if r is None:
         return ""
     soup = BeautifulSoup(r.text, "html.parser")
     _clean_soup(soup)
@@ -345,9 +365,10 @@ def chunk_text(s: str, limit: int) -> List[str]:
 
 
 def resolve_canonical(url: str) -> str:
+    r = safe_get(url, headers=HEADERS, timeout=20, allow_redirects=True)
+    if r is None:
+        return url
     try:
-        r = requests.get(url, headers=HEADERS, timeout=20, allow_redirects=True)
-        r.raise_for_status()
         final = r.url or url
         soup = BeautifulSoup(r.text, "html.parser")
         link = soup.find("link", rel=lambda v: v and "canonical" in str(v).lower())
@@ -375,7 +396,7 @@ async def send_item(bot: Bot, chat_id: str, it: Item, feed: Optional['Feed'] = N
         mode = ParseMode.HTML
     else:
         text, mode = _render_text(feed, it)
-    await bot.send_message(chat_id=chat_id, text=text, parse_mode=mode, disable_web_page_preview=False)
+    await send_message_retry(bot, chat_id=chat_id, text=text, parse_mode=mode, disable_web_page_preview=False)
 
 
 async def send_fulltext(bot: Bot, dest: str, it: Item, feed: Feed) -> None:
@@ -393,23 +414,23 @@ async def send_fulltext(bot: Bot, dest: str, it: Item, feed: Feed) -> None:
     date_str = fmt_date(it.date_iso, it.date_text)
     header = f"<b>{escape(it.title)}</b>\nDate: {date_str}\n\n{link}"
     if not body:
-        await bot.send_message(chat_id=dest, text=header, parse_mode=ParseMode.HTML, disable_web_page_preview=False)
+        await send_message_retry(bot, chat_id=dest, text=header, parse_mode=ParseMode.HTML, disable_web_page_preview=False)
         return
     chunks = chunk_text(body, feed.split_len)
     start_idx = 0
     if chunks:
         first_candidate = f"{header}\n\n{escape(chunks[0])}"
         if len(first_candidate) <= feed.split_len:
-            await bot.send_message(chat_id=dest, text=first_candidate, parse_mode=ParseMode.HTML, disable_web_page_preview=False)
+            await send_message_retry(bot, chat_id=dest, text=first_candidate, parse_mode=ParseMode.HTML, disable_web_page_preview=False)
             start_idx = 1
         else:
-            await bot.send_message(chat_id=dest, text=header, parse_mode=ParseMode.HTML, disable_web_page_preview=False)
+            await send_message_retry(bot, chat_id=dest, text=header, parse_mode=ParseMode.HTML, disable_web_page_preview=False)
     else:
-        await bot.send_message(chat_id=dest, text=header, parse_mode=ParseMode.HTML, disable_web_page_preview=False)
+        await send_message_retry(bot, chat_id=dest, text=header, parse_mode=ParseMode.HTML, disable_web_page_preview=False)
         return
     for i in range(start_idx, len(chunks)):
         await asyncio.sleep(0.2)
-        await bot.send_message(chat_id=dest, text=escape(chunks[i]), parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+        await send_message_retry(bot, chat_id=dest, text=escape(chunks[i]), parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
 
     
@@ -419,7 +440,19 @@ async def run_once_multi(token: str, chat: str) -> None:
     feeds = load_config(default_chat=chat)
     seen_map = load_seen()
 
-    async with Bot(token=token) as bot:
+    # Configure higher timeouts for python-telegram-bot HTTPX client
+    connect_timeout = float(os.getenv("TG_CONNECT_TIMEOUT", "20"))
+    read_timeout = float(os.getenv("TG_READ_TIMEOUT", "60"))
+    write_timeout = float(os.getenv("TG_WRITE_TIMEOUT", "60"))
+    pool_timeout = float(os.getenv("TG_POOL_TIMEOUT", "10"))
+    request = HTTPXRequest(
+        connect_timeout=connect_timeout,
+        read_timeout=read_timeout,
+        write_timeout=write_timeout,
+        pool_timeout=pool_timeout,
+    )
+
+    async with Bot(token=token, request=request) as bot:
         for f in feeds:
             try:
                 if f.type == "rss":
@@ -462,3 +495,34 @@ async def main_loop(token: str, chat: str) -> None:
         await run_once_multi(token, chat)
         logger.info("sleeping %ss", POLL_SEC)
         await asyncio.sleep(POLL_SEC)
+
+async def send_message_retry(bot: Bot, *, attempts: int = 5, base_delay: float = 1.0, **kwargs) -> None:
+    """Send a message with retries and exponential backoff for transient errors.
+
+    Handles RetryAfter, TimedOut, NetworkError, and Conflict. Won't retry on
+    BadRequest/Forbidden to avoid duplicating user-visible errors.
+    """
+    delay = base_delay
+    for i in range(attempts):
+        try:
+            await bot.send_message(**kwargs)
+            return
+        except RetryAfter as e:
+            wait = getattr(e, "retry_after", None)
+            wait_s = float(wait) if wait is not None else delay
+            logger.warning("telegram RetryAfter: waiting %.1fs", wait_s)
+            await asyncio.sleep(wait_s)
+        except (TimedOut, NetworkError, Conflict) as e:
+            logger.warning("telegram transient error (%s): %s", e.__class__.__name__, e)
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 30.0)
+        except (BadRequest, Forbidden) as e:
+            # Non-retryable; re-raise to let caller log/handle
+            raise
+        except Exception as e:
+            # Unknown error; do limited retries
+            logger.warning("telegram unknown error: %s", e)
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 30.0)
+    # Final attempt without catching to surface the error if it still fails
+    await bot.send_message(**kwargs)
