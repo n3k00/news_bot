@@ -1,0 +1,25 @@
+[Unit]
+Description=News Bot (Python) - Auto restart
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# EDIT: Set your project path here
+WorkingDirectory=/home/ubuntu/news_bot
+# Use system Python or a venv: ExecStart=/home/ubuntu/news_bot/.venv/bin/python news_push_bot.py
+ExecStart=/usr/bin/env python3 news_push_bot.py
+Restart=always
+RestartSec=5
+# Ensure immediate stdout/err to journald
+Environment=PYTHONUNBUFFERED=1
+# If you rely on .env inside the repo, news_push_bot.py already loads it via python-dotenv
+
+# (Optional) Hardening
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
